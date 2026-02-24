@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日本語解析器</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;600&family=Noto+Serif+TC:wght@300;400;600&family=Shippori+Mincho:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1208;
+    --paper: #f5f0e8;
+    --paper-dark: #ede6d6;
+    --vermillion: #c0392b;
+    --gold: #b8972a;
+    --gold-light: #d4af37;
+    --muted: #7a6e5e;
+    --border: #c8b89a;
+    --shadow: rgba(26,18,8,0.15);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--ink); min-height: 100vh; font-family: 'Noto Serif TC','Noto Serif JP',serif; overflow-x: hidden; position: relative; }
+  body::before { content:''; position:fixed; inset:0; background: radial-gradient(ellipse at 20% 50%, rgba(184,151,42,0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(192,57,43,0.06) 0%, transparent 50%), repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(200,184,154,0.03) 60px, rgba(200,184,154,0.03) 61px); pointer-events:none; z-index:0; }
+  .wrapper { position:relative; z-index:1; max-width:860px; margin:0 auto; padding:48px 24px 80px; }
+
+  header { text-align:center; margin-bottom:48px; animation:fadeDown 0.8s ease both; }
+  .kamon { font-size:36px; margin-bottom:16px; opacity:0.7; filter:drop-shadow(0 0 12px rgba(212,175,55,0.4)); }
+  h1 { font-family:'Shippori Mincho','Noto Serif JP',serif; font-size:clamp(26px,5vw,40px); color:var(--paper); letter-spacing:0.15em; font-weight:600; }
+  .subtitle { margin-top:10px; color:var(--gold-light); font-size:13px; letter-spacing:0.25em; opacity:0.85; }
+  .divider { display:flex; align-items:center; gap:12px; margin:24px auto 0; max-width:300px; }
+  .divider::before,.divider::after { content:''; flex:1; height:1px; background:linear-gradient(to right,transparent,var(--gold)); }
+  .divider::after { background:linear-gradient(to left,transparent,var(--gold)); }
+  .divider span { color:var(--gold); font-size:12px; opacity:0.7; }
+
+  .card { background:var(--paper); border-radius:4px; padding:32px; border:1px solid var(--border); box-shadow:0 8px 40px var(--shadow),inset 0 1px 0 rgba(255,255,255,0.6); animation:fadeUp 0.8s ease 0.2s both; position:relative; }
+  .card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(to right,var(--vermillion),var(--gold),var(--vermillion)); border-radius:4px 4px 0 0; }
+  .input-label { font-size:11px; letter-spacing:0.3em; color:var(--muted); text-transform:uppercase; margin-bottom:12px; display:block; }
+  textarea { width:100%; min-height:120px; border:1.5px solid var(--border); border-radius:3px; padding:16px; font-family:'Noto Serif JP',serif; font-size:18px; line-height:1.9; color:var(--ink); background:rgba(255,255,255,0.6); resize:vertical; outline:none; transition:border-color 0.2s,box-shadow 0.2s; letter-spacing:0.05em; }
+  textarea:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(184,151,42,0.15); }
+  textarea::placeholder { color:var(--border); }
+  .btn-row { display:flex; justify-content:space-between; align-items:center; margin-top:20px; gap:12px; flex-wrap:wrap; }
+  .char-count { font-size:12px; color:var(--muted); }
+  .btn-analyze { background:linear-gradient(135deg,var(--vermillion) 0%,#962d20 100%); color:#fff; border:none; padding:12px 36px; font-family:'Noto Serif TC',serif; font-size:15px; letter-spacing:0.2em; border-radius:3px; cursor:pointer; transition:all 0.2s; box-shadow:0 4px 16px rgba(192,57,43,0.35); }
+  .btn-analyze:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(192,57,43,0.45); }
+  .btn-analyze:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+  .error-msg { display:none; background:#fef2f2; border:1px solid #fca5a5; border-radius:4px; padding:16px 20px; color:#dc2626; font-size:14px; margin-top:16px; }
+  .error-msg.show { display:block; }
+
+  /* 語音選擇器 */
+  .voice-bar { margin-top:16px; border-top:1px solid var(--border); padding-top:14px; }
+  .voice-bar-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .voice-bar-label { font-size:11px; letter-spacing:0.2em; color:var(--muted); }
+  .btn-detect { background:var(--paper-dark); border:1px solid var(--border); border-radius:3px; padding:5px 12px; font-size:12px; cursor:pointer; color:var(--muted); font-family:inherit; }
+  .btn-detect:hover { background:var(--border); }
+  #voice-select { display:none; border:1px solid var(--border); border-radius:3px; padding:5px 8px; font-size:12px; background:var(--paper); color:var(--ink); max-width:280px; }
+  #voice-info { margin-top:8px; font-size:12px; color:var(--muted); line-height:1.7; }
+  .btn-test { background:var(--paper-dark); border:1px solid var(--border); border-radius:3px; padding:3px 10px; font-size:11px; cursor:pointer; color:var(--muted); font-family:inherit; margin-left:8px; }
+
+  /* Loading */
+  .loading { display:none; text-align:center; padding:48px; color:var(--paper); }
+  .loading.show { display:block; }
+  .loading-kanji { font-size:56px; animation:spin 3s linear infinite; display:inline-block; color:var(--gold); filter:drop-shadow(0 0 16px rgba(212,175,55,0.5)); }
+  .loading p { margin-top:16px; font-size:14px; letter-spacing:0.2em; color:var(--muted); }
+
+  /* Results */
+  .result-section { display:none; animation:fadeUp 0.6s ease both; }
+  .result-section.show { display:block; }
+  .section-title { font-size:11px; letter-spacing:0.35em; color:var(--gold); text-transform:uppercase; margin-bottom:16px; display:flex; align-items:center; gap:10px; }
+  .section-title::after { content:''; flex:1; height:1px; background:linear-gradient(to right,var(--gold-light),transparent); opacity:0.4; }
+
+  /* Furigana */
+  .furigana-card { background:var(--paper); border:1px solid var(--border); border-radius:4px; padding:28px 32px; margin-bottom:24px; box-shadow:0 4px 24px var(--shadow); position:relative; }
+  .speak-btn { position:absolute; top:16px; right:16px; background:var(--paper-dark); border:1px solid var(--border); border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; transition:all 0.2s; color:var(--muted); }
+  .speak-btn:hover { background:var(--gold); color:#fff; border-color:var(--gold); transform:scale(1.08); }
+  .speak-btn.speaking { background:var(--vermillion); color:#fff; border-color:var(--vermillion); animation:pulse 1s infinite; }
+  .furigana-display { font-family:'Noto Serif JP',serif; font-size:22px; line-height:2.8; color:var(--ink); letter-spacing:0.1em; }
+  ruby { ruby-align:center; }
+  rt { font-size:11px; color:var(--vermillion); letter-spacing:0.05em; }
+
+  /* Token cards */
+  .legend { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; background:rgba(245,240,232,0.06); padding:14px 16px; border-radius:4px; border:1px solid rgba(200,184,154,0.15); }
+  .legend-item { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--paper); opacity:0.75; }
+  .legend-dot { width:10px; height:4px; border-radius:2px; flex-shrink:0; }
+  .c-名詞{background:#3b82f6;} .c-動詞{background:#10b981;} .c-形容詞{background:#f59e0b;} .c-副詞{background:#8b5cf6;} .c-助詞{background:#6b7280;} .c-助動詞{background:#94a3b8;} .c-接続詞{background:#ec4899;} .c-その他{background:#d1d5db;}
+  .tokens-grid { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:24px; }
+  .token { background:var(--paper); border:1px solid var(--border); border-radius:4px; padding:10px 14px; box-shadow:0 2px 8px var(--shadow); cursor:pointer; min-width:56px; text-align:center; transition:transform 0.15s,box-shadow 0.15s; }
+  .token:hover { transform:translateY(-2px); box-shadow:0 6px 16px var(--shadow); }
+  .token.active { outline:2px solid var(--gold); outline-offset:2px; }
+  .token-word { font-family:'Noto Serif JP',serif; font-size:18px; color:var(--ink); display:block; }
+  .token-reading { font-size:10px; color:var(--vermillion); display:block; margin-top:2px; min-height:14px; }
+  .token-pos { font-size:9px; color:var(--muted); display:block; margin-top:4px; letter-spacing:0.08em; }
+  .pos-名詞{border-top:3px solid #3b82f6;} .pos-動詞{border-top:3px solid #10b981;} .pos-形容詞{border-top:3px solid #f59e0b;} .pos-副詞{border-top:3px solid #8b5cf6;} .pos-助詞{border-top:3px solid #6b7280;} .pos-助動詞{border-top:3px solid #94a3b8;} .pos-接続詞{border-top:3px solid #ec4899;} .pos-感動詞{border-top:3px solid #f97316;} .pos-記号{border-top:3px solid #d1d5db;} .pos-その他{border-top:3px solid #d1d5db;}
+
+  /* Analysis cards */
+  .analysis-card { background:var(--paper); border:1px solid var(--border); border-radius:4px; padding:28px 32px; box-shadow:0 4px 24px var(--shadow); margin-bottom:24px; }
+  .translation-text { font-size:18px; line-height:1.8; color:var(--ink); padding:16px; background:var(--paper-dark); border-radius:3px; border-left:3px solid var(--gold); letter-spacing:0.05em; }
+  .analysis-card ul { list-style:none; padding:0; }
+  .analysis-card ul li { display:flex; gap:10px; padding:8px 0; font-size:15px; color:#3d3428; line-height:1.9; border-bottom:1px solid var(--paper-dark); }
+  .analysis-card ul li:last-child { border-bottom:none; }
+  .analysis-card ul li::before { content:'◆'; color:var(--gold); font-size:10px; margin-top:6px; flex-shrink:0; }
+
+  /* ── 句子主幹樹狀圖 ── */
+  .tree-card { background:var(--ink); border:1px solid rgba(200,184,154,0.2); border-radius:4px; padding:32px 28px 28px; box-shadow:0 4px 24px rgba(0,0,0,0.4); margin-bottom:24px; overflow-x:auto; }
+
+  /* 切換按鈕列 */
+  .tree-toggle { display:flex; gap:8px; margin-bottom:28px; }
+  .tree-toggle-btn { padding:6px 20px; border-radius:20px; border:1px solid rgba(200,184,154,0.3); background:transparent; color:rgba(200,184,154,0.5); font-size:12px; letter-spacing:0.15em; cursor:pointer; font-family:'Noto Serif TC',serif; transition:all 0.2s; }
+  .tree-toggle-btn.active { background:var(--gold); border-color:var(--gold); color:var(--ink); font-weight:600; }
+
+  /* 樹狀圖本體：垂直排列（由下到上 = 由修飾到主幹） */
+  .tree-diagram { display:flex; flex-direction:column; gap:0; min-width:200px; }
+
+  .tree-row {
+    display:flex;
+    align-items:center;
+    position:relative;
+    margin-bottom:0;
+    opacity:0;
+    animation:treeIn 0.4s ease forwards;
+  }
+
+  /* 階梯縮排：level 0 = 最左（主幹），越大越縮進 */
+  .tree-row[data-level="0"] { padding-left: 0px; }
+  .tree-row[data-level="1"] { padding-left: 60px; }
+  .tree-row[data-level="2"] { padding-left: 120px; }
+  .tree-row[data-level="3"] { padding-left: 180px; }
+  .tree-row[data-level="4"] { padding-left: 240px; }
+  .tree-row[data-level="5"] { padding-left: 300px; }
+
+  /* 連接線：左側垂直＋水平短線 */
+  .tree-connector {
+    position:absolute;
+    left:0;
+    top:0;
+    bottom:0;
+    pointer-events:none;
+  }
+
+  .tree-chip {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    writing-mode:vertical-rl;
+    text-orientation:mixed;
+    font-family:'Noto Serif JP',serif;
+    font-size:17px;
+    letter-spacing:0.15em;
+    color:#f5f0e8;
+    padding:16px 14px;
+    border-radius:6px;
+    min-height:80px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.35);
+    border:1px solid rgba(200,184,154,0.15);
+    cursor:default;
+    transition:transform 0.15s, box-shadow 0.15s;
+    margin:4px 0;
+    position:relative;
+  }
+  .tree-chip:hover { transform:scale(1.05); box-shadow:0 8px 24px rgba(0,0,0,0.5); }
+
+  /* 主幹（level 0）= 金褐色，最突出 */
+  .tree-chip.level-0 { background:linear-gradient(160deg,#6b4c10,#3d2a06); border-color:rgba(212,175,55,0.5); color:var(--gold-light); font-size:19px; }
+  /* level 1 */
+  .tree-chip.level-1 { background:linear-gradient(160deg,#4a3820,#2d2010); border-color:rgba(200,184,154,0.25); }
+  /* level 2+ */
+  .tree-chip.level-2, .tree-chip.level-3, .tree-chip.level-4, .tree-chip.level-5 { background:linear-gradient(160deg,#2e2518,#1e180e); border-color:rgba(200,184,154,0.12); color:rgba(245,240,232,0.8); }
+
+  .tree-chip-label {
+    position:absolute;
+    top:-18px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:9px;
+    letter-spacing:0.1em;
+    color:var(--gold);
+    white-space:nowrap;
+    writing-mode:horizontal-tb;
+    opacity:0.8;
+  }
+
+  /* 主幹標記圓點 */
+  .trunk-dot { width:10px; height:10px; border-radius:50%; background:var(--gold); display:inline-block; margin-right:10px; box-shadow:0 0 8px rgba(212,175,55,0.6); flex-shrink:0; }
+
+  /* 主幹句文字說明 */
+  .trunk-summary { font-family:'Noto Serif JP',serif; font-size:15px; color:var(--gold-light); margin-left:14px; line-height:2; letter-spacing:0.1em; opacity:0.9; }
+
+  /* 空狀態 */
+  .tree-empty { color:rgba(200,184,154,0.4); font-size:13px; letter-spacing:0.15em; text-align:center; padding:24px; }
+
+  /* SVG 連接線 */
+  .tree-svg { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+
+  @keyframes treeIn { from{opacity:0;transform:translateX(12px);} to{opacity:1;transform:translateX(0);} }
+
+  /* Dict modal */
+  .dict-overlay { display:none; position:fixed; inset:0; background:rgba(10,7,3,0.65); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center; padding:24px; }
+  .dict-overlay.show { display:flex; }
+  .dict-modal { background:var(--paper); border-radius:6px; width:100%; max-width:480px; box-shadow:0 24px 80px rgba(0,0,0,0.5); border:1px solid var(--border); animation:modalIn 0.25s ease both; overflow:hidden; position:relative; }
+  .dict-header { background:linear-gradient(135deg,var(--ink) 0%,#2a1f0e 100%); padding:24px 28px 20px; border-bottom:1px solid var(--border); position:relative; }
+  .dict-close { position:absolute; top:14px; right:16px; background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer; transition:color 0.15s; padding:4px 8px; }
+  .dict-close:hover { color:var(--paper); }
+  .dict-word { font-family:'Shippori Mincho','Noto Serif JP',serif; font-size:40px; color:var(--paper); letter-spacing:0.1em; line-height:1.1; }
+  .dict-reading { font-family:'Noto Serif JP',serif; font-size:16px; color:var(--vermillion); margin-top:6px; letter-spacing:0.15em; }
+  .dict-pos-badge { display:inline-block; background:rgba(184,151,42,0.2); border:1px solid rgba(184,151,42,0.4); color:var(--gold-light); font-size:11px; letter-spacing:0.2em; padding:3px 10px; border-radius:20px; }
+  .dict-speak-btn { background:rgba(192,57,43,0.15); border:1px solid rgba(192,57,43,0.4); color:#f4a49a; font-size:12px; letter-spacing:0.15em; padding:4px 14px; border-radius:20px; cursor:pointer; transition:all 0.2s; font-family:'Noto Serif TC',serif; }
+  .dict-speak-btn:hover { background:var(--vermillion); color:#fff; border-color:var(--vermillion); }
+  .dict-speak-btn.speaking { background:var(--vermillion); color:#fff; animation:pulse 1s infinite; }
+  .dict-body { padding:24px 28px; }
+  .dict-section-label { font-size:10px; letter-spacing:0.3em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; margin-top:20px; }
+  .dict-section-label:first-child { margin-top:0; }
+  .dict-meanings { list-style:none; padding:0; }
+  .dict-meanings li { display:flex; gap:10px; padding:6px 0; font-size:15px; color:var(--ink); line-height:1.7; border-bottom:1px solid var(--paper-dark); }
+  .dict-meanings li:last-child { border-bottom:none; }
+  .dict-meanings li .num { color:var(--vermillion); font-size:12px; font-weight:600; min-width:18px; padding-top:3px; }
+  .dict-example { background:var(--paper-dark); border-radius:4px; padding:12px 16px; border-left:3px solid var(--gold); }
+  .dict-example .ja { font-family:'Noto Serif JP',serif; font-size:15px; color:var(--ink); line-height:1.8; }
+  .dict-example .zh { font-size:13px; color:var(--muted); margin-top:4px; line-height:1.6; }
+  .dict-loading { text-align:center; padding:32px; color:var(--muted); font-size:14px; letter-spacing:0.15em; }
+  .dict-loading .spin { display:inline-block; animation:spin 1.5s linear infinite; font-size:24px; color:var(--gold); }
+
+  footer { text-align:center; margin-top:60px; font-size:12px; color:rgba(200,184,154,0.3); letter-spacing:0.2em; }
+
+  @keyframes fadeDown { from{opacity:0;transform:translateY(-20px);} to{opacity:1;transform:translateY(0);} }
+  @keyframes fadeUp   { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+  @keyframes spin     { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+  @keyframes pulse    { 0%,100%{transform:scale(1);} 50%{transform:scale(1.1);} }
+  @keyframes modalIn  { from{opacity:0;transform:translateY(16px) scale(0.97);} to{opacity:1;transform:translateY(0) scale(1);} }
+
+  @media(max-width:600px){
+    .card,.furigana-card,.analysis-card,.tree-card{padding:20px 16px;}
+    .furigana-display{font-size:18px;}
+    .dict-word{font-size:32px;}
+    .dict-header,.dict-body{padding:20px;}
+    .tree-row[data-level="1"]{padding-left:40px;}
+    .tree-row[data-level="2"]{padding-left:80px;}
+    .tree-row[data-level="3"]{padding-left:120px;}
+    .tree-row[data-level="4"]{padding-left:160px;}
+    .tree-row[data-level="5"]{padding-left:200px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <header>
+    <div class="kamon">⛩</div>
+    <h1>日本語文章解析器</h1>
+    <p class="subtitle">詞性・假名・句子主幹・文法・翻譯・朗讀</p>
+    <div class="divider"><span>文</span></div>
+  </header>
+
+  <div class="card">
+    <label class="input-label" for="input-text">輸入日文句子或段落</label>
+    <textarea id="input-text" placeholder="例：来月、野菜の値段がどうなりそうか、農林水産省が発表しました。"></textarea>
+    <div class="btn-row">
+      <span class="char-count" id="char-count">0 字</span>
+      <button class="btn-analyze" id="analyze-btn" onclick="analyze()">解　析</button>
+    </div>
+    <div class="error-msg" id="error-msg"></div>
+    <div class="voice-bar">
+      <div class="voice-bar-row">
+        <span class="voice-bar-label">朗讀語音</span>
+        <button class="btn-detect" onclick="detectVoices()">🔍 查看可用語音</button>
+        <select id="voice-select" onchange="onVoiceChange()"></select>
+      </div>
+      <div id="voice-info"></div>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="loading-kanji">文</div>
+    <p>AI 正在深度解析中，請稍候…</p>
+  </div>
+
+  <div class="result-section" id="results">
+
+    <!-- 假名標注 -->
+    <div class="section-title" style="margin-top:40px;">假名標注</div>
+    <div class="furigana-card">
+      <button class="speak-btn" id="speak-btn" onclick="toggleSpeak()" title="朗讀">🔊</button>
+      <div class="furigana-display" id="furigana-display"></div>
+    </div>
+
+    <!-- 詞性標注 -->
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot c-名詞"></div>名詞</div>
+      <div class="legend-item"><div class="legend-dot c-動詞"></div>動詞</div>
+      <div class="legend-item"><div class="legend-dot c-形容詞"></div>形容詞</div>
+      <div class="legend-item"><div class="legend-dot c-副詞"></div>副詞</div>
+      <div class="legend-item"><div class="legend-dot c-助詞"></div>助詞</div>
+      <div class="legend-item"><div class="legend-dot c-助動詞"></div>助動詞</div>
+      <div class="legend-item"><div class="legend-dot c-接続詞"></div>接続詞</div>
+      <div class="legend-item"><div class="legend-dot c-その他"></div>其他</div>
+    </div>
+    <div class="section-title">詞性標注</div>
+    <div class="tokens-grid" id="tokens-grid"></div>
+
+    <!-- 句子主幹樹狀圖 -->
+    <div class="section-title">句子主幹拆解</div>
+    <div class="tree-card">
+      <div class="tree-toggle">
+        <button class="tree-toggle-btn active" id="btn-full" onclick="switchTree('full')">原句</button>
+        <button class="tree-toggle-btn" id="btn-trunk" onclick="switchTree('trunk')">句子主幹</button>
+      </div>
+      <div id="tree-legend" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;font-size:11px;letter-spacing:0.1em;color:rgba(200,184,154,0.5);">
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:linear-gradient(160deg,#6b4c10,#3d2a06);border:1px solid rgba(212,175,55,0.5);"></span>主幹
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:linear-gradient(160deg,#4a3820,#2d2010);border:1px solid rgba(200,184,154,0.2);margin-left:8px;"></span>直接修飾
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:linear-gradient(160deg,#2e2518,#1e180e);border:1px solid rgba(200,184,154,0.1);margin-left:8px;"></span>間接修飾
+      </div>
+      <div class="tree-diagram" id="tree-diagram"></div>
+      <div id="trunk-summary" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(200,184,154,0.15);display:flex;align-items:center;"></div>
+    </div>
+
+    <!-- 中文翻譯 -->
+    <div class="section-title">中文翻譯</div>
+    <div class="analysis-card">
+      <div class="translation-text" id="translation-text"></div>
+    </div>
+
+    <!-- 文法說明 -->
+    <div class="section-title">文法結構說明</div>
+    <div class="analysis-card">
+      <div id="grammar-content"></div>
+    </div>
+  </div>
+
+  <footer>© 2025 日本語解析器　製作：Claude AI　for 繁體中文學習者</footer>
+</div>
+
+<!-- Dictionary Modal -->
+<div class="dict-overlay" id="dict-overlay" onclick="closeDictIfOverlay(event)">
+  <div class="dict-modal">
+    <div class="dict-header">
+      <button class="dict-close" onclick="closeDict()">✕</button>
+      <div class="dict-word" id="dict-word"></div>
+      <div class="dict-reading" id="dict-reading"></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px;">
+        <span class="dict-pos-badge" id="dict-pos-badge"></span>
+        <button class="dict-speak-btn" id="dict-speak-btn" onclick="speakWord()">🔊 朗讀</button>
+      </div>
+    </div>
+    <div class="dict-body" id="dict-body">
+      <div class="dict-loading"><div class="spin">文</div><p style="margin-top:10px;">查詢字典中…</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════
+//  基礎 UI
+// ════════════════════════════════════════════
+const inputEl = document.getElementById('input-text');
+const charCountEl = document.getElementById('char-count');
+inputEl.addEventListener('input', () => { charCountEl.textContent = inputEl.value.length + ' 字'; });
+inputEl.addEventListener('keydown', e => { if ((e.ctrlKey||e.metaKey) && e.key==='Enter') analyze(); });
+
+function showLoading(v) { document.getElementById('loading').classList.toggle('show', v); }
+function showResults(v) { document.getElementById('results').classList.toggle('show', v); }
+function showError(msg) { const el=document.getElementById('error-msg'); el.textContent=msg; el.classList.toggle('show',!!msg); }
+
+// ════════════════════════════════════════════
+//  語音管理
+// ════════════════════════════════════════════
+let selectedVoiceName = null;
+
+function getVoiceByName(name) { return speechSynthesis.getVoices().find(v=>v.name===name)||null; }
+
+function getBestJpVoice() {
+  const voices = speechSynthesis.getVoices();
+  const tests = [v=>v.name.includes('Nanami'), v=>v.lang==='ja-JP'&&v.name.toLowerCase().includes('neural'), v=>v.lang==='ja-JP', v=>v.lang.startsWith('ja')];
+  for (const t of tests) { const f=voices.find(t); if(f) return f; }
+  return null;
+}
+
+function detectVoices() {
+  const jpVoices = speechSynthesis.getVoices().filter(v=>v.lang.startsWith('ja'));
+  const sel = document.getElementById('voice-select');
+  const info = document.getElementById('voice-info');
+  if (!jpVoices.length) { info.textContent='⚠️ 找不到日文語音，請使用 Edge 瀏覽器。'; return; }
+  sel.innerHTML = jpVoices.map(v=>`<option value="${v.name}">${v.name}</option>`).join('');
+  sel.style.display = 'block';
+  const nanami = jpVoices.find(v=>v.name.includes('Nanami'));
+  sel.value = (nanami||jpVoices[0]).name;
+  selectedVoiceName = sel.value;
+  updateVoiceInfo();
+}
+
+function onVoiceChange() { selectedVoiceName=document.getElementById('voice-select').value; updateVoiceInfo(); }
+
+function updateVoiceInfo() {
+  document.getElementById('voice-info').innerHTML =
+    `目前選擇：<strong>${selectedVoiceName}</strong><button class="btn-test" onclick="testVoice()">▶ 試聽</button>`;
+}
+
+function testVoice() {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance('こんにちは。日本語のテストです。');
+  u.lang='ja-JP'; u.rate=0.85;
+  const v = selectedVoiceName ? getVoiceByName(selectedVoiceName) : getBestJpVoice();
+  if(v) u.voice=v;
+  speechSynthesis.speak(u);
+}
+
+speechSynthesis.onvoiceschanged = () => { if(!selectedVoiceName){ const b=getBestJpVoice(); if(b) selectedVoiceName=b.name; } };
+
+function createUtterance(text, rate=0.85) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang='ja-JP'; u.rate=rate; u.pitch=1.0;
+  const v = (selectedVoiceName?getVoiceByName(selectedVoiceName):null)||getBestJpVoice();
+  if(v) u.voice=v;
+  return u;
+}
+
+// ════════════════════════════════════════════
+//  整句朗讀
+// ════════════════════════════════════════════
+let speaking=false, utterance=null;
+
+function toggleSpeak() {
+  const btn=document.getElementById('speak-btn');
+  if(speaking){ speechSynthesis.cancel(); speaking=false; btn.textContent='🔊'; btn.classList.remove('speaking'); return; }
+  const text=inputEl.value.trim();
+  if(!text) return;
+  utterance=createUtterance(text, 0.85);
+  utterance.onend=utterance.onerror=()=>{ speaking=false; btn.textContent='🔊'; btn.classList.remove('speaking'); };
+  speechSynthesis.speak(utterance);
+  speaking=true; btn.textContent='⏹'; btn.classList.add('speaking');
+}
+
+// ════════════════════════════════════════════
+//  假名標注
+// ════════════════════════════════════════════
+function buildFurigana(tokens) {
+  return tokens.map(t => {
+    if(!t.reading||t.reading===t.word) return `<span>${t.word}</span>`;
+    return `<ruby>${t.word}<rt>${t.reading}</rt></ruby>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════
+//  詞性卡片
+// ════════════════════════════════════════════
+const POS_VALID=['名詞','動詞','形容詞','副詞','助詞','助動詞','接続詞','感動詞','記号'];
+
+function buildTokenCards(tokens) {
+  const grid=document.getElementById('tokens-grid');
+  grid.innerHTML='';
+  tokens.forEach(t=>{
+    if(!t.word||!t.word.trim()) return;
+    const pos=POS_VALID.includes(t.pos)?t.pos:'その他';
+    const div=document.createElement('div');
+    div.className=`token pos-${pos}`;
+    div.title='點擊查看字典解釋';
+    div.innerHTML=`<span class="token-word">${t.word}</span><span class="token-reading">${t.reading&&t.reading!==t.word?t.reading:''}</span><span class="token-pos">${pos}</span>`;
+    div.addEventListener('click', ()=>openDict(t.word, t.reading||'', pos, div));
+    grid.appendChild(div);
+  });
+}
+
+// ════════════════════════════════════════════
+//  句子主幹樹狀圖
+// ════════════════════════════════════════════
+let treeDataFull=[], treeDataTrunk=[], currentTreeMode='full';
+
+function buildTree(chunks, mode) {
+  const container=document.getElementById('tree-diagram');
+  container.innerHTML='';
+  const data = mode==='trunk' ? treeDataTrunk : treeDataFull;
+  if(!data||!data.length){ container.innerHTML='<div class="tree-empty">（無法解析句子結構）</div>'; return; }
+
+  data.forEach((item, i) => {
+    const row=document.createElement('div');
+    row.className='tree-row';
+    const level=Math.min(item.level||0, 5);
+    row.setAttribute('data-level', level);
+    row.style.animationDelay=(i*0.06)+'s';
+
+    const chip=document.createElement('div');
+    chip.className=`tree-chip level-${level}`;
+    chip.textContent=item.chunk;
+    if(level===0) {
+      const label=document.createElement('div');
+      label.className='tree-chip-label';
+      label.textContent='主幹';
+      chip.appendChild(label);
+    }
+    row.appendChild(chip);
+
+    // 角色說明
+    if(item.role) {
+      const role=document.createElement('div');
+      role.style.cssText='writing-mode:horizontal-tb;font-size:11px;color:rgba(200,184,154,0.5);margin-left:12px;letter-spacing:0.08em;align-self:center;';
+      role.textContent=item.role;
+      row.appendChild(role);
+    }
+    container.appendChild(row);
+  });
+
+  // 主幹摘要
+  const trunkItems = (mode==='trunk'?treeDataTrunk:treeDataFull).filter(d=>d.level===0);
+  const summaryEl=document.getElementById('trunk-summary');
+  if(trunkItems.length) {
+    summaryEl.innerHTML=`<div class="trunk-dot"></div><span style="font-size:11px;letter-spacing:0.2em;color:rgba(200,184,154,0.45);margin-right:10px;">主幹</span><span class="trunk-summary">${trunkItems.map(t=>t.chunk).join('　')}</span>`;
+  } else { summaryEl.innerHTML=''; }
+}
+
+function switchTree(mode) {
+  currentTreeMode=mode;
+  document.getElementById('btn-full').classList.toggle('active', mode==='full');
+  document.getElementById('btn-trunk').classList.toggle('active', mode==='trunk');
+  buildTree(null, mode);
+}
+
+// ════════════════════════════════════════════
+//  字典彈窗
+// ════════════════════════════════════════════
+const dictCache={};
+
+function openDict(word, reading, pos, chipEl) {
+  document.querySelectorAll('.token').forEach(el=>el.classList.remove('active'));
+  if(chipEl) chipEl.classList.add('active');
+  document.getElementById('dict-word').textContent=word;
+  document.getElementById('dict-reading').textContent=(reading&&reading!==word)?reading:'';
+  document.getElementById('dict-pos-badge').textContent=pos;
+  document.getElementById('dict-body').innerHTML='<div class="dict-loading"><div class="spin">文</div><p style="margin-top:10px;">查詢字典中…</p></div>';
+  document.getElementById('dict-overlay').classList.add('show');
+  document.body.style.overflow='hidden';
+  if(dictCache[word]){ renderDict(dictCache[word]); return; }
+  fetchDict(word, reading, pos);
+}
+
+function closeDict() {
+  document.getElementById('dict-overlay').classList.remove('show');
+  document.body.style.overflow='';
+  document.querySelectorAll('.token').forEach(el=>el.classList.remove('active'));
+  speechSynthesis.cancel();
+  const btn=document.getElementById('dict-speak-btn');
+  if(btn){ btn.textContent='🔊 朗讀'; btn.classList.remove('speaking'); }
+}
+
+function closeDictIfOverlay(e){ if(e.target===document.getElementById('dict-overlay')) closeDict(); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDict(); });
+
+async function fetchDict(word, reading, pos) {
+  try {
+    const prompt=`你是日文字典助理。請用繁體中文解釋以下日文詞語，只回傳 JSON，不要其他文字。
+詞語：${word}　讀音：${reading||'未知'}　詞性：${pos}
+JSON格式：{"baseForm":"辭書形","meanings":["意思一","意思二"],"example":{"ja":"例句","zh":"翻譯"},"note":"補充說明或空字串"}`;
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,messages:[{role:'user',content:prompt}]})});
+    if(!res.ok) throw new Error(res.status);
+    const data=await res.json();
+    const raw=(data.content||[]).map(c=>c.text||'').join('');
+    const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    dictCache[word]=parsed;
+    renderDict(parsed);
+  } catch {
+    document.getElementById('dict-body').innerHTML='<p style="color:#dc2626;padding:16px;font-size:14px;">查詢失敗，請再試一次。</p>';
+  }
+}
+
+function renderDict(d) {
+  const wordEl=document.getElementById('dict-word');
+  document.getElementById('dict-body').innerHTML=`
+    ${d.baseForm&&d.baseForm!==wordEl.textContent?`<div class="dict-section-label">辭書形</div><p style="font-family:'Noto Serif JP',serif;font-size:18px;color:var(--ink);margin-bottom:4px;">${d.baseForm}</p>`:''}
+    <div class="dict-section-label">意思</div>
+    <ul class="dict-meanings">${(d.meanings||[]).map((m,i)=>`<li><span class="num">${i+1}.</span><span>${m}</span></li>`).join('')}</ul>
+    <div class="dict-section-label">例句</div>
+    <div class="dict-example"><div class="ja">${d.example?.ja||''}</div><div class="zh">${d.example?.zh||''}</div></div>
+    ${d.note?`<div class="dict-section-label">補充說明</div><p style="font-size:14px;color:var(--muted);line-height:1.7;padding:4px 0;">${d.note}</p>`:''}`;
+}
+
+function speakWord() {
+  const word=document.getElementById('dict-word').textContent;
+  const btn=document.getElementById('dict-speak-btn');
+  if(!word) return;
+  if(speechSynthesis.speaking){ speechSynthesis.cancel(); btn.textContent='🔊 朗讀'; btn.classList.remove('speaking'); return; }
+  const u=createUtterance(word, 0.75);
+  u.onstart=()=>{ btn.textContent='⏹ 停止'; btn.classList.add('speaking'); };
+  u.onend=u.onerror=()=>{ btn.textContent='🔊 朗讀'; btn.classList.remove('speaking'); };
+  speechSynthesis.speak(u);
+}
+
+// ════════════════════════════════════════════
+//  主分析流程
+// ════════════════════════════════════════════
+async function analyze() {
+  const text=inputEl.value.trim();
+  if(!text){ showError('請輸入日文句子後再解析。'); return; }
+  showError(''); showResults(false); showLoading(true);
+  document.getElementById('analyze-btn').disabled=true;
+  try {
+    const result=await callClaudeAI(text);
+    const tokens=result.tokens||[];
+    document.getElementById('furigana-display').innerHTML=tokens.length?buildFurigana(tokens):text;
+    buildTokenCards(tokens);
+    document.getElementById('translation-text').textContent=result.translation||'（翻譯失敗）';
+    const gc=document.getElementById('grammar-content');
+    gc.innerHTML=result.grammar?.length?'<ul>'+result.grammar.map(i=>`<li>${i}</li>`).join('')+'</ul>':'<p style="color:var(--muted);font-size:14px;">（無文法說明）</p>';
+    // 樹狀圖
+    treeDataFull=result.tree_full||[];
+    treeDataTrunk=result.tree_trunk||[];
+    currentTreeMode='full';
+    document.getElementById('btn-full').classList.add('active');
+    document.getElementById('btn-trunk').classList.remove('active');
+    buildTree(null,'full');
+    showLoading(false); showResults(true);
+  } catch(err) {
+    showLoading(false); showError('解析時發生錯誤：'+err.message);
+  }
+  document.getElementById('analyze-btn').disabled=false;
+}
+
+// ════════════════════════════════════════════
+//  Claude AI
+// ════════════════════════════════════════════
+async function callClaudeAI(text) {
+  const prompt=`你是一位專業的日文教學助理。請分析以下日文句子，並用繁體中文回答。
+
+日文句子：「${text}」
+
+請只回傳以下 JSON 格式，不要任何其他文字：
+{
+  "tokens": [
+    {"word":"来月","reading":"らいげつ","pos":"名詞"},
+    {"word":"、","reading":"","pos":"記号"}
+  ],
+  "translation": "繁體中文自然翻譯",
+  "grammar": ["〜そうか：表示推測的疑問","〜ました：禮貌體過去式"],
+  "tree_full": [
+    {"chunk":"発表しました。","level":0,"role":"述語（主幹）"},
+    {"chunk":"農林水産省が","level":1,"role":"主語"},
+    {"chunk":"なりそうか、","level":1,"role":"埋め込み節"},
+    {"chunk":"どう","level":2,"role":"副詞修飾"},
+    {"chunk":"値段が","level":2,"role":"埋め込み主語"},
+    {"chunk":"野菜の","level":3,"role":"名詞修飾"},
+    {"chunk":"来月、","level":3,"role":"時間修飾"}
+  ],
+  "tree_trunk": [
+    {"chunk":"農林水産省が","level":1,"role":"主語"},
+    {"chunk":"発表しました。","level":0,"role":"述語（主幹）"}
+  ]
+}
+
+規則：
+- tokens：涵蓋每一個字，pos只能是 名詞/動詞/形容詞/副詞/助詞/助動詞/接続詞/感動詞/記号/その他
+- tree_full：把句子拆成有意義的語塊（chunk），level=0是句子核心主幹（通常是述語），level越大表示修飾層次越深（越邊緣）；按照從左到右原句順序排列，每個chunk放在其修飾對象的下方
+- tree_trunk：只保留理解句子最核心必要的語塊（主語＋述語，最多3個）
+- chunk請以自然的語塊切割，不要逐字切
+- role用簡短繁體中文標示語法功能`;
+
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:3000,messages:[{role:'user',content:prompt}]})});
+  if(!res.ok) throw new Error(`API 回應錯誤 (${res.status})`);
+  const data=await res.json();
+  const raw=(data.content||[]).map(c=>c.text||'').join('');
+  const clean=raw.replace(/```json|```/g,'').trim();
+  try { return JSON.parse(clean); }
+  catch { const m=clean.match(/"translation"\s*:\s*"([^"]+)"/); return {tokens:[],translation:m?m[1]:'解析失敗',grammar:[],tree_full:[],tree_trunk:[]}; }
+}
+</script>
+</body>
+</html>
